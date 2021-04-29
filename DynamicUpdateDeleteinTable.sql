@@ -1,7 +1,3 @@
-USE [SK2DB_test];
-GO
-
-/****** Object:  StoredProcedure [dbo].[sp_process]    Script Date: 4/28/2021 5:52:26 PM ******/
 
 SET ANSI_NULLS ON;
 GO
