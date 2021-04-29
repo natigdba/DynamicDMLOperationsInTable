@@ -1,184 +1,158 @@
-USE [SK2DB_test]
+USE [SK2DB_test];
 GO
 
 /****** Object:  StoredProcedure [dbo].[sp_process]    Script Date: 4/28/2021 5:52:26 PM ******/
-SET ANSI_NULLS ON
+
+SET ANSI_NULLS ON;
 GO
-
-SET QUOTED_IDENTIFIER ON
+SET QUOTED_IDENTIFIER ON;
 GO
+CREATE PROC [dbo].[sp_process] @table_name                 NVARCHAR(50),     -- which table we need for operation
+                               @operation                  NVARCHAR(50),     -- which type of operation (example : delete, update)
+                               @column_names_for_value     NVARCHAR(100),    -- column names for update process
+                               @newvalues                  NVARCHAR(100),    -- new values for update process
+                               @column_names_for_condition NVARCHAR(100) = NULL,  
+                               @operators_for_condition    NVARCHAR(100) = NULL,  
+                               @values_for_condition       NVARCHAR(100) = NULL, 
+                               @type                       VARCHAR(1)    = 'P' --P is print and E is execute
+AS
+    BEGIN
 
-CREATE proc [dbo].[sp_process] @table_name nvarchar(50),@operation nvarchar(50),@column_names_for_value nvarchar(100)
-,@newvalues nvarchar(100),@column_names_for_condition nvarchar(100)=NULL,@operators_for_condition nvarchar(100)=NULL,@values_for_condition nvarchar(100)=NULL,@type varchar(1)='P'
+        ---------multiply columns condition
 
-as
+        BEGIN TRY
+            DECLARE @condition NVARCHAR(1000);
+            DECLARE @Pos BIGINT, @OldPos BIGINT, @Pos1 BIGINT= 1, @OldPos1 BIGINT= 1, @Pos2 BIGINT= 1, @OldPos2 BIGINT= 1, @str NVARCHAR(1000)= '';
+            SELECT @Pos = 1, 
+                   @OldPos = 1;
+            WHILE @Pos < LEN(@column_names_for_condition)
+                  AND @pos <> 0
+                BEGIN
+                    SELECT @Pos = CHARINDEX(',', @column_names_for_condition, @OldPos);
+                    SELECT @Pos1 = CHARINDEX(',', @operators_for_condition, @OldPos1);
+                    SELECT @Pos2 = CHARINDEX(',', @values_for_condition, @OldPos2);
+                    SELECT @condition = a + b + CASE
+                                                    WHEN f.datatype = 'nvarchar'
+                                                    THEN 'N''' + f.c + ''''
+                                                    WHEN f.datatype IN('date', 'datetime', 'datetime2', 'varchar')
+                                                    THEN '''' + f.c + ''''
+                                                    ELSE c
+                                                END
+                    FROM
+                    (
+                        SELECT *, 
+                        (
+                            SELECT DATA_TYPE
+                            FROM INFORMATION_SCHEMA.columns
+                            WHERE COLUMN_NAME = t.a
+                                  AND TABLE_NAME = @table_name
+                        ) AS datatype
+                        FROM
+                        (
+                            SELECT SUBSTRING(@column_names_for_condition, @OldPos, IIF(@pos = 0, LEN(@column_names_for_condition), @Pos - @OldPos)) AS a, 
+                                   SUBSTRING(@operators_for_condition, @OldPos1, IIF(@pos1 = 0, LEN(@operators_for_condition), @Pos1 - @OldPos1)) AS b, 
+                                   SUBSTRING(@values_for_condition, @OldPos2, IIF(@pos2 = 0, LEN(@values_for_condition), @Pos2 - @OldPos2)) AS c
+                        ) AS t
+                    ) AS f;
+                    SELECT @OldPos = @Pos + 1;
+                    SELECT @OldPos1 = @Pos1 + 1;
+                    SELECT @OldPos2 = @Pos2 + 1;
+                    SET @str = @str + @condition + ' and ';
+                END;
+            SET @condition = SUBSTRING(@str, 1, LEN(@str) - 4);
+        END TRY
+        BEGIN CATCH
+            PRINT 'must be add condition';
+        END CATCH;
 
-begin 
-
-
----------multiply columns condition
-
-BEGIN TRY
-declare @condition nvarchar(1000)
-DECLARE @Pos     BIGINT,
-        @OldPos  BIGINT,
-        @Pos1    BIGINT=1,
-        @OldPos1 BIGINT=1,
-		@Pos2   BIGINT=1,
-        @OldPos2 BIGINT=1,
-		@str nvarchar(1000) =''
-
-    SELECT  @Pos    = 1,
-            @OldPos = 1
-
-    WHILE   @Pos < LEN(@column_names_for_condition) and @pos<>0
-        BEGIN
-
-            SELECT  @Pos = CHARINDEX(',', @column_names_for_condition, @OldPos)
-			SELECT  @Pos1 = CHARINDEX(',', @operators_for_condition, @OldPos1)
-			SELECT  @Pos2 = CHARINDEX(',', @values_for_condition, @OldPos2)
-            --INSERT INTO @Table
-
-
-			select @condition= a+b+case when f.datatype='nvarchar' then 'N'''+f.c+'''' 
-			when  f.datatype in (
-'date',
-'datetime',
-'datetime2',
-'varchar' ) then ''''+f.c+'''' else c end
-
-			
-			from (
-
-			select * ,(select  DATA_TYPE from INFORMATION_SCHEMA.columns where COLUMN_NAME=t.a and TABLE_NAME=@table_name)  as datatype
-			
-			
-			 from (
-            SELECT  SUBSTRING(@column_names_for_condition, @OldPos,iif(@pos=0,len(@column_names_for_condition), @Pos - @OldPos)) as a
-			,  SUBSTRING(@operators_for_condition, @OldPos1,iif(@pos1=0,len(@operators_for_condition), @Pos1 - @OldPos1)) as b
-			,  SUBSTRING(@values_for_condition, @OldPos2,iif(@pos2=0,len(@values_for_condition), @Pos2 - @OldPos2)) as c) as t ) as f
-
-            SELECT  @OldPos = @Pos + 1
-			SELECT  @OldPos1 = @Pos1 + 1
-			SELECT  @OldPos2 = @Pos2 + 1
-
-			set @str=@str+@condition+' and '
-
-
-        END
-
-
-		set @condition = substring(@str,1,len(@str)-4)
-
-		
-
-END TRY 
-
-BEGIN CATCH
-
-print 'must be add condition'
-
-END CATCH
-
-declare @string nvarchar(max)
-
-
-
-
-if @operation='update'
-begin
-BEGIN TRY
-declare @conditionnew nvarchar(1000)
-set  @str=''
-set  @Pos     =1
-set  @OldPos  =1
-set  @Pos1    =1
-set  @OldPos1 =1
-
-
-  WHILE   @Pos < LEN(@column_names_for_value) and @pos<>0
-        BEGIN
-
-            SELECT  @Pos = CHARINDEX(',', @column_names_for_value, @OldPos)
-			SELECT  @Pos1 = CHARINDEX(',', @newvalues, @OldPos1)
-			select @conditionnew=  a+' = '+case when f.datatype='nvarchar' and not f.b like '%[-,+,/,*,),(]%' then 'N'''+f.b+'''' 
-			when  f.datatype in (
-'date',
-'datetime',
-'datetime2',
-'varchar' ) and not f.b like '%[-,+,/,*,),(]%' then ''''+f.b+'''' else b end
-
-			
-			from (
-
-			select * ,(select  DATA_TYPE from INFORMATION_SCHEMA.columns where COLUMN_NAME=t.a and TABLE_NAME=@table_name)  as datatype
-			
-			
-			 from (
-  SELECT  SUBSTRING(@column_names_for_value, @OldPos,iif(@pos=0,len(@column_names_for_value), @Pos - @OldPos)) as a
-			
-			,  SUBSTRING(@newvalues, @OldPos1,iif(@pos1=0,len(@newvalues), @Pos1 - @OldPos1)) as b)  as t ) as f
-
-            SELECT  @OldPos = @Pos + 1
-			SELECT  @OldPos1 = @Pos1 + 1
-
-			
-set @str=@str+@conditionnew+', '
-
-        END
-
-		set @conditionnew = substring(@str,1,len(@str)-1)
-
-
-
-set @string='update '+@table_name +' set '+ @conditionnew+' where ' +@condition
-if @string is null 
-begin
-print 'update doesn''t work' 
-end
-IF @type='p'
-begin
-print @string
-end
-IF @type='e'
-begin
-execute sp_executesql @statement = @string
-end
-END TRY 
-
-BEGIN CATCH 
-print 'update doesn''t work'
-END CATCH
-end
-
-if @operation='delete'
-begin
-BEGIN TRY
-
-set @string='delete ' +@table_name +' where '+@condition
-if @string is null 
-begin
-print 'delete doesn''t work' 
-end
-
-IF @type='p'
-begin
-print @string
-end
-IF @type='e'
-begin
-execute sp_executesql @statement = @string
-end
-END TRY 
-
-BEGIN CATCH
-print 'delete doesn''t work'
-END CATCH
-
-END
+		-------for update 
+        DECLARE @string NVARCHAR(MAX);
+        IF @operation = 'update'
+            BEGIN
+                BEGIN TRY
+                    DECLARE @conditionnew NVARCHAR(1000);
+                    SET @str = '';
+                    SET @Pos = 1;
+                    SET @OldPos = 1;
+                    SET @Pos1 = 1;
+                    SET @OldPos1 = 1;
+                    WHILE @Pos < LEN(@column_names_for_value)
+                          AND @pos <> 0
+                        BEGIN
+                            SELECT @Pos = CHARINDEX(',', @column_names_for_value, @OldPos);
+                            SELECT @Pos1 = CHARINDEX(',', @newvalues, @OldPos1);
+                            SELECT @conditionnew = a + ' = ' + CASE
+                                                                   WHEN f.datatype = 'nvarchar'
+                                                                        AND NOT f.b LIKE '%[-,+,/,*,),(]%'
+                                                                   THEN 'N''' + f.b + ''''
+                                                                   WHEN f.datatype IN('date', 'datetime', 'datetime2', 'varchar')
+                                                                        AND NOT f.b LIKE '%[-,+,/,*,),(]%'
+                                                                   THEN '''' + f.b + ''''
+                                                                   ELSE b
+                                                               END
+                            FROM
+                            (
+                                SELECT *, 
+                                (
+                                    SELECT DATA_TYPE
+                                    FROM INFORMATION_SCHEMA.columns
+                                    WHERE COLUMN_NAME = t.a
+                                          AND TABLE_NAME = @table_name
+                                ) AS datatype
+                                FROM
+                                (
+                                    SELECT SUBSTRING(@column_names_for_value, @OldPos, IIF(@pos = 0, LEN(@column_names_for_value), @Pos - @OldPos)) AS a, 
+                                           SUBSTRING(@newvalues, @OldPos1, IIF(@pos1 = 0, LEN(@newvalues), @Pos1 - @OldPos1)) AS b
+                                ) AS t
+                            ) AS f;
+                            SELECT @OldPos = @Pos + 1;
+                            SELECT @OldPos1 = @Pos1 + 1;
+                            SET @str = @str + @conditionnew + ', ';
+                        END;
+                    SET @conditionnew = SUBSTRING(@str, 1, LEN(@str) - 1);
+                    SET @string = 'update ' + @table_name + ' set ' + @conditionnew + ' where ' + @condition;
+                    IF @string IS NULL
+                        BEGIN
+                            PRINT 'update doesn''t work';
+                        END;
+                    IF @type = 'p'
+                        BEGIN
+                            PRINT @string;
+                        END;
+                    IF @type = 'e'
+                        BEGIN
+                            EXECUTE sp_executesql 
+                                    @statement = @string;
+                        END;
+                END TRY
+                BEGIN CATCH
+                    PRINT 'update doesn''t work';
+                END CATCH;
+            END;
 
 
-END
+	    -----For delete 
+        IF @operation = 'delete'
+            BEGIN
+                BEGIN TRY
+                    SET @string = 'delete ' + @table_name + ' where ' + @condition;
+                    IF @string IS NULL
+                        BEGIN
+                            PRINT 'delete doesn''t work';
+                        END;
+                    IF @type = 'p'
+                        BEGIN
+                            PRINT @string;
+                        END;
+                    IF @type = 'e'
+                        BEGIN
+                            EXECUTE sp_executesql 
+                                    @statement = @string;
+                        END;
+                END TRY
+                BEGIN CATCH
+                    PRINT 'delete doesn''t work';
+                END CATCH;
+            END;
+    END;
 GO
-
-
